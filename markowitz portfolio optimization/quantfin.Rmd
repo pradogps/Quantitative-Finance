@@ -684,7 +684,7 @@ $$ \cdots $$
 Uma maneira de observar o comportamento das carteira otimizadas no gráfico da fronteira eficiente seria variando o valor de $\lambda$, que representa o nível de aversão a risco do investidor. No R temos o pacote `gganimate` que possui um recurso que possibilita a criação de gráficos com animações. Abaixo iremos usar esse pacote e verificar a posição da carteira ótima conforme o valor de $\lambda$ varia. 
  
 ```{r, warning=FALSE, message=FALSE}
-pf_vol <- numeric()
+pf_vol <- numeric() #volatilidade
 pf_return <- numeric()
 
 lambda_vec <- seq(from = 0.001, to = .05, by = 0.001)
