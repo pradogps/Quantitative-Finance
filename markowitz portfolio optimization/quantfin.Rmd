@@ -1,0 +1,754 @@
+---
+title: " <img src=\"icmc.png\" style=\"float: right;\"/> "
+subtitle: "**Teoria Moderna do Portfólio: Fronteira Eficiente de Markowitz**"
+author: "_Gustavo Prado_"
+date: "_10 de Agosto de 2021_"
+output: 
+    html_document:
+        highlight: textmate
+        theme: flatly
+        number_sections: no
+        toc: yes
+        toc_float:
+            collapsed: yes
+            smooth_scrool: yes
+---
+
+```{css setup1, echo=FALSE}
+pre {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+pre[class] {
+  max-height: 300px;
+}
+```
+
+```{r setup2, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, collapse = TRUE)
+```
+
+---
+
+## *Resumo*
+
+Material produzido para o curso: *Gestão de Portfólios usando o R da Escola de Finanças Quantitativas Quant School*. A estrutura desse relatório parte de um problema prático do mercado financeiro que é solucionado utilizando programação, com base nos conceitos de fronteira eficiente de Markowitz, que será construída de forma empírica via simulações de Monte Carlo e, ainda, com auxílio do pacote `ggplot2` para visualização dos dados obtidos via simulação. Além disso, vale ressaltar, que a motivação é introduzir conceitos básicos da Teoria Moderna do Portfólio e teoria das probabilidades, sendo este um trabalho introdutório para fins de fixação de conteúdo, que não irá se aprofundar em demonstrações matemáticas e condições de pressupostos do modelo. O problema será: como construir um portfólio de investimentos otimizado com base no conceito do binômio **risco-retorno** (segundo a Teoria Moderna do Portfólio de Markowitz). Algumas premissas do modelo são:   
+
+* Investidores são racionais(avessos ao risco);  
+  
+* Princípio da diversificação para otimizar carteiras de investimento;  
+  
+* Normalidade dos retornos;
+  
+* Volatilidade medida pelo desvio padrão.
+
+
+$$ \cdots $$
+
+## *Metodologia*
+
+A estrutura dos códigos desse relatório será da seguinte forma: o primeiro passo será a utilização do pacote `quantmod` para obtenção dos dados do site _Yahoo Finance_. Através desses dados serão criadas funções. A primeira delas irá armazenar em uma lista de _data frames_ em que cada índice dessa lista representa as informações referente a cada ativo financeiro. A proposta será selecionar 4 ativos e armazenar as informações em uma matriz de preços e, posteriormente, uma matriz de retornos. Em uma  etapa seguinte será obtido o retorno médio dos ativos e a matriz de covariância, através da matriz de retornos. Munidos dessas duas informações dos ativos do portfólio, nesta etapa, será possível calcular via processo de otimização matemática os pesos(de cada ativo) maximizados. A otimização nos retorna os pesos de cada ativo financeiro no nosso portfólio, dado um valor $\lambda$ (lambda) que representa a utilidade do investidor (no nosso contexto irá representar o grau de aversão ao risco do investidor). Essa valor $\lambda$ representa um dos parâmetros da [função de custo](https://pt.wikipedia.org/wiki/Fun%C3%A7%C3%A3o_de_perda), que será a função que vamos otimizar com a função `optim` do R. Nessa mesma etapa da otimização, também faremos uma simulação de Monte Carlo para construir a fronteira eficiente de forma empírica, através de funções que irão retornar o valor numérico do retorno esperado do portfólio e da volatilidade(desvio padrão do portfólio). Alinhando os dados da otimização e da simulação, estaremos na etapa final do processo, conseguindo mostrar visualmente onde essas carteiras otimizadas estariam na fronteira eficiente simulada.
+
+OBS.: Os pesos de cada ativo do portfólio devem somar 1 e restrição _long-only_ (como o próprio nome diz, apenas comprados, apostando sempre na valorização das ações que investe).
+
+
+$$ \cdots $$
+
+## *Conceitos teóricos necessários*
+
+**Teoria Moderna do Portfólio (TMP)**
+
+A teoria moderna do portfólio considera a rentabilidade do ativo como uma Variável Aleatória(v.a.), e a carteira de investimentos como uma combinação ponderada de ativos financeiros. Uma v.a. terá duas estatísticas fundamentais para construção do modelo: valor esperado e variância. Dentro da TMP o valor esperado será atribuído o retorno esperado ou rentabilidade esperada do ativo, e o desvio padrão(raiz quadrada da variância), será o risco/volatilidade. Para cada nível de retorno de uma carteira é possível variar os pesos dos ativos individuais para determinar a carteira com o menor risco. Estas carteiras possuem o menor desvio padrão de todas as carteira com um dado retorno e são chamadas de _carteira com variância mínima_. Essas carteiras de variância mínima irão formar a _fronteira eficiente_. Assumindo um investidor avesso ao risco, dado um nível de tolerância ao risco, a carteira ótima sempre irá pertencer a fronteira eficiente, ignorando as carteiras que não pertencem a fronteira. Esse resultado é possível ser obtido de forma analítica, aceitando algumas premissas para que o modelo, dada uma aceitação ao risco, seja maximizado o retorno esperado. Essa solução é possível pois a utilização da volatilidade como medida de risco nos trás boas propriedades matemáticas, sendo assim possível utilizar técnicas de otimização.
+
+
+**Probabilidade e Variáveis Aleatórias**  
+  
+Alguns resultados da teoria de probabilidades serão necessários para uma compreensão total do problema. Aqui esses resultados não serão demonstrados, apenas enunciados para conhecimento e revisão rápida. 
+  
+i) O valor esperado de uma combinação linear de variáveis aleatórias é a combinação linear dos seus valores esperados.  
+
+$$
+\mathbb{E}(aX + bY) = a\mathbb{E}(X) + b\mathbb{E}(Y)
+$$
+
+ii) A covariância entre $X$ e $Y$ é igual a esperança do produto menos o produto das esperanças:
+
+$$
+Cov(X,Y) = \mathbb{E}(XY) - \mathbb{E}(X)\mathbb{E}(Y)
+$$
+
+iii) O coeficiente de correlação entre $X$ e $Y$ é definido por:
+
+$$
+\rho_{XY} = \frac{Cov(X,Y)}{\sigma_X \sigma_Y}
+$$
+
+Lembre-se: $\sigma_X = \sqrt{Var(X)}$ é o desvio padrão da variável aleatória $X$.
+
+iv) A variância da soma de $X$ e $Y$:
+
+$$
+Var(aX+bY) = a^2Var(X)+b^2Var(Y)+2 a b\cdot Cov(X,Y)
+$$
+
+**Notações de probabilide em finanças**  
+  
+Os resultados teóricos mencionados acima são fundamentais para a compreensão do problema no universo de finanças. Agora vamos abstrair alguns desses resultados com a nomenclatura usual de finanças.
+
+
+i) O valor esperado do retorno de um portfólio com dois ativos(Ativo **E** e Ativo **D**). A fração investida em **E** é $w_e$. Fração investida em **D** é $w_d$. O retorno total do portfólio é dado por:
+
+$$
+R_p = w_dR_d + w_eR_e
+$$
+
+$$
+\mathbb{E}(R_p) = \mathbb{E}(w_dR_d + w_eR_e) = w_d\mathbb{E}(R_d) + w_e\mathbb{E}(R_e)
+$$
+
+Ou seja, o retorno do portfólio é a média ponderada dos retornos dos ativos que o compõem.  
+
+ii) A variância do portfólio é definido por:
+
+$$
+Var(R_p) = \sigma^2_p = w_d^2 \sigma^2_d+w_e^2 \sigma^2_e+2 w_d w_e\cdot Cov(R_d,R_e)
+$$
+
+Lembre-se: $\sigma_p$ é o desvio padrão/risco do portfólio.
+
+**Variância do portfólio em notação matricial**  
+  
+Essa notação é especialmente interessante pois permite que calculemos a variância do portfólio para $n$ ativos sem que nos preocupemos com fórmulas.
+
+$$
+\sigma^2_p = \begin{bmatrix} 
+w_d  \\ 
+w_e  \\
+\end{bmatrix}\times\begin{bmatrix} 
+Var(R_d) & Cov(R_d, R_e) \\ 
+Cov(R_d, R_e) & Var(R_e) \\
+\end{bmatrix}\times\begin{bmatrix} 
+w_d & w_e \\ 
+\end{bmatrix}
+$$
+
+
+$$ \cdots $$
+
+
+## *Pacotes usados*
+
+```{r Pacotes, warning=FALSE, message=FALSE}
+if(!require("pacman")) install.packages("pacman")
+
+pacman::p_load(tidyverse,
+               magrittr,
+               ggthemes,
+               gridExtra,
+               kableExtra,
+               corrplot,
+               gganimate,
+               quantmod,
+               dplyr)
+```
+
+
+$$ \star $$ 
+
+
+## *Manipulando dados* {.tabset .tabset-fade}
+
+Utilizaremos nessa simulação **4 ativos financeiros**. Sendo eles:  
+  
+* Dólar;  
+
+* Ações da Ambev;  
+  
+* Ações da Vale;  
+  
+* Ações do Itáu;  
+  
+```{r, warning=FALSE, message=FALSE}
+# Construindo vetor de ativos e nomeando
+asset_vec <- c(Dolar ="BRL=X",
+               Ambev = "ABEV3.SA",
+               Vale = "VALE3.SA",
+               Itau = "ITUB4.SA")
+```
+
+
+### Bases de dados 
+
+Abaixo vamos criar uma função que gera uma lista de bases de dados financeiros utilizando a API do Yahoo! Finance. Serão 4 _data.frames_ e cada um deles representa os ativos escolhidos acima. Esses _data.frames_ serão armazenados em uma lista.
+
+```{r, warning=FALSE, message=FALSE}
+# Criando funcao que baixa e junta as bases de dados em unico objeto
+gen_df_list <- function(asset_vec) {
+    # cria uma lista vazia
+    df_list <- list()
+
+    for(i in 1:length(asset_vec)){
+        # extraindo o i-esimo simbolo do ativo
+        asset <- asset_vec[i]
+        # extraindo o i-esimo nome do ativo
+        asset_name <- names(asset_vec)[i]
+        df_list[[asset_name]] <- getSymbols(asset, auto.assign = FALSE) %>%
+            # transforma em um data frame
+            data.frame(stringsAsFactors = FALSE)
+        
+        # renomeando os nomes das colunas
+        colnames(df_list[[asset_name]]) <- c("open", "high", "low",
+                                        "close", "volume", "adjusted")
+    }
+    return(df_list)
+}
+
+# rodando a funcao criada
+df_list <- gen_df_list(asset_vec)
+```
+
+
+$$ \cdots $$ 
+
+
+### Matriz de preços
+  
+Processo para criação da função da matriz de preços.
+  
+* Criação da função que condensa as bases de dados em apenas uma matriz.  
+* Descobrimos qual a maior base para inicializar o processo de _merge_.  
+* Iteramos nas bases extraindo a coluna _"adjusted"_ para a matriz final.  
+* Renomeamos as variáveis para manter os nomes convenientes.
+
+Cada linha será uma data e cada coluna um ativo que foi armazenado em `df_list`.
+  
+```{r, warning=FALSE, message=FALSE}
+# funcao que gera uma unica matriz de precos
+gen_price_matrix <- function(df_list) {
+    
+    # Buscando qual a maior base dos dados disponivel
+    # criando um vetor numerico vazio
+    nrow_vec <- numeric()
+    # iterando em cada base de dados para ver quantas linhas cada uma tem
+    for(df in df_list){
+        # incrementando o vetor com o num de linhas do df 
+        nrow_vec <- c(nrow_vec, nrow(df))
+    }
+    
+    # obtendo o indice da maior base de dados
+    max_index <- which.max(nrow_vec)
+    
+    # criando vetor de datas para indexar a base de precos
+    date_vec <- df_list[[max_index]] %>% 
+        row.names() %>% 
+        as.Date()
+    
+    # criando data frame apenas com colunas de datas
+    price_matrix <- data.frame(date = date_vec,
+                               stringsAsFactors = FALSE)
+    
+    # iterando em cada base de dados do 'df_list'
+    for(df in df_list){
+        # a cada iteracao um data frame temporario ira ser criado
+        temp_df = data.frame(date = as.Date(row.names(df)),
+                             price = df$adjusted,
+                             stringsAsFactors = FALSE)
+
+        price_matrix <- dplyr::full_join(price_matrix, temp_df, by = "date")
+    }
+    
+    # renomeando as colunas da matrix de precos para carregar a nomenclatura de antes
+    names(price_matrix) <- c("date", names(df_list))
+    return(price_matrix)
+}
+
+
+price_matrix <- gen_price_matrix(df_list)
+```
+
+Obtendo algumas medidas de resumo abaixo.
+
+```{r, warning=FALSE, message=FALSE}
+summary(price_matrix)
+```
+
+```{r, warning=FALSE, message=FALSE}
+glimpse(price_matrix)
+```
+
+
+$$ \cdots $$ 
+
+
+### Matriz de retornos
+
+A matriz de retornos é feita de forma simples. Vamos dividir o preço de um dia pelo preço do dia anterior.
+  
+```{r, warning=FALSE, message=FALSE}
+# funcao que calcula a matriz de retorno
+gen_return_matrix <- function(price_matrix, remove_date = TRUE){
+    # usando price_matrix para servir de molde (migrado as dimensoes)
+    return_matrix <- price_matrix
+    # limpando informacoes da return_matrix menos a coluna de data
+    return_matrix[,-1] <- NA
+    # operacao vetorizada de divisao de um num pelo seu anterior
+    return_matrix[-1,-1] <- price_matrix[-1,-1]/price_matrix[-nrow(price_matrix),-1] - 1
+    # retirando os dados faltantes
+    return_matrix <- na.omit(return_matrix)
+    # removendo data
+    if(remove_date){
+        return_matrix <- return_matrix %>% 
+            select(-date)
+    }
+    return(return_matrix)
+}
+
+
+# rodando a funcao
+return_matrix <- gen_return_matrix(price_matrix, remove_date = FALSE)
+```
+
+Abaixo podemos verificar que os dados começam em **Janeiro de 2007**. Então conseguimos garantir dados de longo prazo, para a nossa simulação da fronteira eficiente. Caso os ativos escolhidos fossem recentes e não tivessem muitos dados, muito provavelmente a simulação não iria refletir a teoria.
+
+```{r, warning=FALSE, message=FALSE}
+head(return_matrix)
+```
+
+
+$$ \cdots $$ 
+
+
+### Matriz de covariâncias
+
+Essa matriz que vamos construir representa como os ativos se relacionam ao longo do tempo, nos fornecendo as medidas de dispersão.
+
+```{r, warning=FALSE, message=FALSE}
+# vamos precisar remover as datas
+return_matrix <- gen_return_matrix(price_matrix)
+
+# funcao que cria a matriz de covariancia
+gen_cov_matrix <- function(return_matrix){
+    cov(return_matrix, use = "pairwise.complete.obs")
+}
+
+cov_matrix <- gen_cov_matrix(return_matrix)
+options(scipen = 999)
+```
+
+A matriz apresentada a seguir é chamada de matriz de variâncias e covariâncias. Na diagonal da matriz temos as variâncias de cada uma das variáveis.
+
+```{r, warning=FALSE, message=FALSE}
+var(return_matrix) %>%
+    kbl() %>%
+        kable_classic_2(full_width = F)
+```
+
+
+
+$$ \cdots $$ 
+
+
+## *Retorno e risco do portfólio* {.tabset .tabset-fade}
+
+
+### Retorno 
+
+Abaixo vamos verificar o retorno anualizado por ativo da nossa carteira de investimentos.
+
+```{r, warning=FALSE, message=FALSE}
+gen_average_return <- function(return_matrix){
+    average_returns <- colMeans(return_matrix, na.rm = TRUE)
+    return(average_returns)
+}
+
+expected_returns <- gen_average_return(return_matrix)
+
+expected_returns <- expected_returns + 1
+expected_returns <- expected_returns^252
+expected_returns <- expected_returns - 1
+expected_returns <- expected_returns*100
+expected_returns <- round(expected_returns, 2)
+
+expected_returns
+```
+
+Agora, a próxima função criada irá retornar a rentabilidade do portfólio a partir da nossa matriz de retornos e um vetor de pesos(inicialmente vamos deixar os pesos iguais para cada ativo). Note que o retorno é apenas um número.
+
+```{r, warning=FALSE, message=FALSE}
+# funcao para calcular a o retorno diario de um portfolio
+calc_pf_return_vec <- function(return_matrix, weights){
+    # garantindo formato de matriz
+    return_matrix <- as.matrix(return_matrix)
+    weights <- matrix(weights, ncol = 1)
+    
+    # multiplicacao matrizes
+    return_vec <- return_matrix %*% weights
+    
+    # garantindo o formato de vetor
+    return_vec <- as.numeric(return_vec)
+    return(return_vec)
+}
+
+
+# utilizando a funcao para criar o vetor de retornos(pesos = 1/n)
+return_vec <- calc_pf_return_vec(return_matrix, weights = rep(1/length(asset_vec),
+                                                              length(asset_vec)))
+
+# unificando todos os retornos em um retorno do portfolio
+# criando uma funcao com argumento definido por padrao
+calc_pf_return <- function(return_vec, annualize = TRUE){
+    # poderia fazer de outra maneira mas omitir nesse caso sera suficiente
+    return_vec <- na.omit(return_vec)
+    return_total <- prod(1 + return_vec) - 1
+    if(annualize){
+        n <- length(return_vec)
+        return_total <- (return_total - 1)^(252/n) - 1
+    }
+    return(return_total)
+}
+
+
+# executando o calculo do retorno do portfolio
+pf_return <- calc_pf_return(return_vec)
+pf_return
+```
+
+
+$$ \cdots $$ 
+
+
+### Volatilidade
+
+Aproveitando que visualizamos a tabela para matriz de covariâncias, vamos verificar a **matriz de correlação de Pearson** entre os ativos logo abaixo. Como o valor de correlação varia no intervalo de -1 a 1, ganhamos a capacidade de interpretar se os dados se relacionam linearmente. Note que a matriz gerada é simétrica, assim como a matriz de covariâncias. Portanto podemos visualizar apenas a diagonal inferior.
+
+```{r, warning=FALSE, message=FALSE}
+col1 <- colorRampPalette(c("#FC4E07", "orange", "gray", "#00AFBB", "purple"))
+
+corrplot(cor(return_matrix), method = "number", type = "lower", tl.pos = "d", tl.col = "black", col = col1(100))
+```
+
+De forma parecida como fizemos para a rentabilidade do portfólio, agora vamos criar a função que nos retorna a volatilidade do portfólio de investimentos, a partir da matriz de covariâncias e os pesos. Note que os pesos continuam igualmente distribuídos por enquanto, e o resultado é um valor numérico.
+
+```{r, warning=FALSE, message=FALSE}
+# calculando a variancia do portfolio
+calc_pf_vol <- function(cov_matrix, weights, annualize = TRUE){
+    weights = matrix(weights, ncol = 1)
+    cov_matrix <- as.matrix(cov_matrix)
+    pf_variance <- t(weights) %*% cov_matrix %*% weights
+    pf_vol <- sqrt(pf_variance)
+    
+    if(annualize){
+        pf_vol <- (pf_vol) * sqrt(252)
+    }
+    pf_vol <- as.numeric(pf_vol)
+    return(pf_vol)
+}
+
+
+# executando o calculo da volatilidade
+weights = rep(1/length(asset_vec), length(asset_vec))
+pf_vol <- calc_pf_vol(cov_matrix, weights)
+pf_vol
+```
+
+
+$$ \cdots $$ 
+
+
+
+## *Visualização dos dados e otimização* {.tabset .tabset-fade}
+
+### Fronteira Eficiente Empírica
+
+Nessa etapa do procedimento iremos utilizar o Método de Monte Carlo para contruir a nossa fronteira eficiente de forma empírica. O método pode ser definido como qualquer método de uma classe de métodos estatísticos que se baseiam em amostragens aleatórias massivas para obter resultados numéricos. Ou seja, a ideia seria simular inúmeras carteiras de investimento com os pesos diferentes, e marcando no gráfico de Risco X Retorno os pontos que representam o portfólio com esses pesos. Nessa simulação vamos sortear os pesos dos ativos **25mil** vezes e plotar no gráfico.
+
+```{r, warning=FALSE, message=FALSE}
+# plotando risco-retorno
+set.seed(1914)
+reps = 25000
+vol_pf_vec <- numeric()
+return_pf_vec <- numeric()
+for(rep in 1:reps){
+    # pesos aleatorios
+    weights <- runif(length(asset_vec), min = 0, max = 1)
+    weights <- weights/sum(weights)
+    
+    # calculando retorno do portfolio
+    return_vec <- calc_pf_return_vec(return_matrix, weights)
+    pf_return <- calc_pf_return(return_vec)
+    return_pf_vec <- c(return_pf_vec, pf_return)
+    
+    # calculando variancia do portfolio
+    pf_vol <- calc_pf_vol(cov_matrix, weights)
+    vol_pf_vec <- c(vol_pf_vec, as.numeric(pf_vol))
+}
+
+
+plot_pf <- ggplot(mapping = aes(x = vol_pf_vec * 100,
+                                y = return_pf_vec * 100,
+                                color = "Simulações")) +
+    geom_point(size = .025, alpha = .8) +
+    xlim(0, 40) +
+    ylim(-20, 20) +
+    ggtitle("Fronteira Eficiente") +
+    labs(y = "Retorno (%)",
+         x = "Volatilidade (%)",
+         subtitle = "Gráfico de Risco X Retorno anualizados",
+         color = "Legenda")  +
+    theme_clean(base_size = 13,
+            base_family = "mono") +
+    theme(legend.title = element_blank(),
+          legend.position = "bottom",
+          legend.text = element_text(size=9),
+          plot.subtitle = element_text(size = 10.5, color = "#A9A9A9")) +
+    scale_color_brewer(palette = "Dark2")
+plot_pf
+```
+
+
+$$ \cdots $$ 
+
+
+### Otimização
+
+Agora que vimos a construção da fronteira eficiente, a próxima pergunta seria: quais portfólios estão justamente na melhor alocação no quesito Risco X Retorno? A otimização irá responder essa pergunta. Nesse processo, usaremos a função `optim` do R com o algoritmo do método (L-BFGS-B) de otimização.
+
+A função que será maximizada é dada por:
+
+$$
+argmax_{w}\left ( \mathbb{E}(R_p) - \frac{\lambda Var(R_p)}{2} \right ) = argmax_{w}\left ( w^T r - \frac{\lambda w^T \Sigma w}{2} \right )
+$$
+$\lambda$: Parâmento da função utilidade (representa  o grau de aversão a risco do investidor).  
+$\Sigma$: Matriz de covariância.  
+$r$: Vetor de retornos esperados.
+
+Chamaremos essa função de função de custo. Como exemplo ilustrativo usaremos o valor de $\lambda = 0.01$ e verificar onde esse portfólio se localiza no meio de todas essas simulações que realizamos.
+
+```{r, warning=FALSE, message=FALSE}
+# encontrando os portfolios mais eficientes
+loss_func <- function(weights, exp_return_vec, cov_matrix, lambda){
+    weights <- weights/sum(weights)
+    out <- weights %*% exp_return_vec - (.5)*(lambda)*calc_pf_vol(cov_matrix, weights)
+    return(-out)
+}
+
+gen_optim_weights <- function(weights, loss_func, return_matrix, lambda){
+    results <- optim(par = weights,
+                     fn = loss_func,
+                     exp_return_vec = gen_average_return(return_matrix),
+                     cov_matrix = gen_cov_matrix(return_matrix),
+                     lambda = lambda,
+                     method = "L-BFGS-B",
+                     upper = rep(1, length(weights)),
+                     lower = rep(0, length(weights)))
+    optim_weights <- results$par/sum(results$par)
+    return(optim_weights)
+}
+
+
+initial_weights <- c(.25, .25, .25, .25)
+optim_weights <- gen_optim_weights(weights = initial_weights,
+                                   loss_func = loss_func,
+                                   return_matrix = return_matrix,
+                                   lambda = 0.01)
+```
+
+```{r, warning=FALSE, message=FALSE}
+pf_vol <- calc_pf_vol(cov_matrix, optim_weights)
+
+return_vec <- calc_pf_return_vec(return_matrix, optim_weights)
+pf_return <- calc_pf_return(return_vec)
+
+plot_pf2 <- ggplot(mapping = aes(x = vol_pf_vec * 100,
+                                 y = return_pf_vec * 100,
+                                 color = "Simulações")) +
+    geom_point(size = .025, alpha = .75) +
+    
+    geom_point(mapping = aes(x = pf_vol * 100,
+                             y = pf_return * 100,
+                             color = "Otimização"),
+               size = 1.35, alpha = .85) +
+    
+    xlim(0, 40) +
+    ylim(-20, 20) +
+    ggtitle("Fronteira Eficiente") +
+    labs(y = "Retorno (%)",
+         x = "Volatilidade (%)",
+         subtitle = "Gráfico de Risco X Retorno anualizados",
+         color = "Legenda") +
+    
+    scale_color_manual(values = c(
+        "Simulações" = "gray40",
+        "Otimização" = "red"
+    )) +
+    theme_clean(base_size = 13,
+            base_family = "mono") +
+    theme(legend.title = element_blank(),
+          legend.position = "bottom",
+          legend.text = element_text(size=9),
+          plot.subtitle = element_text(size = 10.5, color = "#A9A9A9"))
+plot_pf2
+```
+
+
+$$ \cdots $$ 
+
+
+### Alocação da carteira ótima
+
+Vimos que de fato o portfólio otimizado pertence a fronteira eficiente. O próximo questionamento seria: nesse universo dos 4 ativos que estamos trabalhando, dado o valor de $\lambda$, qual o percentual que cada ativo possui na carteira? Abaixo um gráfico de setores representa a fatia de cada ativo nessa carteira de investimento.
+
+```{r, warning=FALSE, message=FALSE}
+
+blank_theme <- theme_minimal()+
+  theme(
+  axis.title.x = element_blank(),
+  axis.title.y = element_blank(),
+  panel.border = element_blank(),
+  panel.grid=element_blank(),
+  axis.ticks = element_blank(),
+  plot.title=element_text(size=14, face="bold")
+  )
+
+pie_chart <- ggplot(mapping = aes(x = "",
+                                  y = optim_weights,
+                                  fill = names(return_matrix))) +
+    geom_bar(width = 1,
+             stat = "identity",
+             color = "white",
+             alpha = 0.6,
+             size = 1.35) +
+    coord_polar("y", start = 0) +
+    
+    geom_label(aes(label = round(optim_weights * 100, 2)),
+             position = position_stack(vjust = 0.5),
+             show.legend = FALSE) +
+    
+    ggtitle("Alocação (%)") +
+    labs(x = "",
+         y = "",
+         fill = "Ativos") +
+    blank_theme +
+
+    theme(axis.text = element_blank(),
+          axis.line = element_line(colour = "white"),
+          plot.title = element_text(hjust = 0.5)) +
+    scale_fill_brewer(palette = "Dark2")
+pie_chart
+```
+
+
+> * Carteira otimizada: Fronteira eficiente e alocação.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+plot_pf2 <- ggplot(mapping = aes(x = vol_pf_vec * 100,
+                                 y = return_pf_vec * 100,
+                                 color = "Simulações")) +
+    geom_point(size = .025, alpha = .75) +
+    
+    geom_point(mapping = aes(x = pf_vol * 100,
+                             y = pf_return * 100,
+                             color = "Otimização"),
+               size = 1.35, alpha = .85) +
+    
+    xlim(0, 40) +
+    ylim(-20, 20) +
+    ggtitle("Fronteira Eficiente") +
+    labs(y = "Retorno (%)",
+         x = "Volatilidade (%)",
+         subtitle = "Gráfico de Risco X Retorno anualizados",
+         color = "Legenda") +
+    
+    scale_color_manual(values = c(
+        "Simulações" = "gray40",
+        "Otimização" = "red"
+    )) +
+    theme_clean(base_size = 9,
+            base_family = "mono") +
+    theme(legend.title = element_blank(),
+          legend.position = "bottom",
+          legend.text = element_text(size=9),
+          plot.subtitle = element_text(size = 7.5, color = "#A9A9A9"))
+
+grid.arrange(plot_pf2, pie_chart, ncol = 2, top = "Visualização da carteira ótima na fronteira eficiente empírica e sua respectiva alocação.")
+```
+
+
+
+$$ \cdots $$
+
+
+## *Visualização animada dos dados* 
+ 
+Uma maneira de observar o comportamento das carteira otimizadas no gráfico da fronteira eficiente seria variando o valor de $\lambda$, que representa o nível de aversão a risco do investidor. No R temos o pacote `gganimate` que possui um recurso que possibilita a criação de gráficos com animações. Abaixo iremos usar esse pacote e verificar a posição da carteira ótima conforme o valor de $\lambda$ varia. 
+ 
+```{r, warning=FALSE, message=FALSE}
+pf_vol <- numeric()
+pf_return <- numeric()
+
+lambda_vec <- seq(from = 0.001, to = .05, by = 0.001)
+for(lambda in lambda_vec){
+    initial_weights <- c(.25, .25, .25, .25)
+    optim_weights <- gen_optim_weights(weights = initial_weights,
+                                       loss_func = loss_func,
+                                       return_matrix = return_matrix,
+                                       lambda = lambda)
+    
+    pf_vol_un <- calc_pf_vol(cov_matrix, optim_weights)
+    pf_vol <- c(pf_vol, as.numeric(pf_vol_un))
+    
+    return_vec <- calc_pf_return_vec(return_matrix, optim_weights)
+    pf_return_un <- calc_pf_return(return_vec)
+    pf_return <- c(pf_return, pf_return_un)
+}
+
+table <- data.frame(volatility = pf_vol,
+                     return = pf_return,
+                     lambda = lambda_vec,
+                     stringsAsFactors = FALSE)
+
+plot_pf2 <- ggplot(mapping = aes(x = vol_pf_vec * 100,
+                                 y = return_pf_vec * 100,
+                                 color = "Simulações")) +
+    geom_point(size = .025, alpha = 0.75) +
+    
+    xlim(0, 40) +
+    ylim(-20, 20) +
+    ggtitle("Fronteira Eficiente") +
+    labs(y = "Retorno (%)",
+         x = "Volatilidade (%)",
+         subtitle = "Gráfico de Risco X Retorno anualizados",
+         color = "Legenda") +
+    
+    theme_clean(base_size = 13,
+            base_family = "mono") +
+    theme(legend.title = element_blank(),
+          legend.position = "bottom",
+          legend.text = element_text(size=9),
+          plot.subtitle = element_text(size = 10.5, color = "#A9A9A9"))
+
+plot_pf2 + 
+    geom_point(data = table, mapping = aes(x = volatility * 100,
+                                           y = return * 100,
+                                           color = "Otimização"),
+               size = 2.15, alpha = .85) +
+    scale_color_manual(values = c(
+        "Simulações" = "gray40",
+        "Otimização" = "red"
+    )) +
+    transition_states(lambda)
+```
+
+
+$$ \star $$ 
+
+
+## *Referências*
+
+* Livro: Probabilidade e Variáveis Aleatórias - Magalhães.  
+* Livro: Investimentos - Bodie, Kane, Marcus.  
+
+- [Carta Trimestral 06/2021 - Kadima Asset Management](https://www.kadimaasset.com.br/biblioteca)
+- [Material usado para o curso: Gestão de Portfólios usando o R.](https://quantschool.wixsite.com/home)  
+<br>
